@@ -4,6 +4,8 @@ let borrado_cambiado = false;
 let duracion;
 let texto_guardado = "";
 let pararEscritura = false;
+let LISTA_MODOS = ["palabras bonus", "letra bendita","letra prohibida", "palabras bonus", "palabras prohibidas", "frase final"];
+let modos_restantes;
 
 const getEl = (id) => document.getElementById(id); // Obtiene los elementos con id.
 
@@ -29,14 +31,63 @@ let tempo_text_borroso;
 let tempo_text_inverso;
 
 let listener_cuenta_atras = null;
+let listener_cambio_letra_palabra = null;
 let timer = null;
 let sub_timer = null;
 
 // Variables de los modos.
 let modo_actual = "";
+let modo_anterior = "";
+
 let putada_actual = "";
 let modo_texto_borroso = 0;
 let desactivar_borrar = false;
+
+const letras_prohibidas = ['e','a','o','s','r','n','i','d','l','c'];
+const letras_benditas= ['z','j','ñ','x','k','w', 'y', 'q', 'h', 'f'];
+const frecuencia_letras = {
+    'a': 12.53,
+    'b': 1.42,
+    'c': 4.68,
+    'd': 5.86,
+    'e': 13.68,
+    'f': 0.69,
+    'g': 1.01,
+    'h': 0.7,
+    'i': 6.25,
+    'j': 0.44,
+    'k': 0.02,
+    'l': 4.97,
+    'm': 3.15,
+    'n': 6.71,
+    'ñ': 0.31,
+    'o': 8.68,
+    'p': 2.51,
+    'q': 0.88,
+    'r': 6.87,
+    's': 7.98,
+    't': 4.63,
+    'u': 3.93,
+    'v': 0.90,
+    'w': 0.01,
+    'x': 0.22,
+    'y': 0.90,
+    'z': 0.52
+}
+
+let letras_benditas_restantes = [...letras_benditas];
+let letras_prohibidas_restantes = [...letras_prohibidas];
+
+const palabras_prohibidas = [
+    "de", "la", "que", "el", "en", "y", "a", "los", "se", "del",
+    "las", "un", "por", "con", "no", "una", "su", "para", "es", "al",
+    "lo", "como", "más", "o", "pero", "sus", "le", "ha", "me", "si",
+    "sin", "sobre", "este", "ya", "entre", "cuando", "todo", "esta", "ser", "son",
+    "dos", "también", "fue", "había", "era", "muy", "años", "hasta", "desde", "está"
+];
+
+let palabras_prohibidas_restantes = [...palabras_prohibidas];
+
 
 var letra_prohibida = "";
 var letra_bendita = "";
@@ -50,7 +101,10 @@ let temp_text_inverso_activado = false;
 let TIEMPO_INVERSO = 20000;
 let TIEMPO_BORROSO = 20000;
 let TIEMPO_BORRADO = 20000;
-
+let TIEMPO_CAMBIO_MODOS = 5000;
+let TIEMPO_CAMBIO_LETRA = 5000;
+let TIEMPO_CAMBIO_PALABRA = 5000;
+let TIEMPO_INICIAL = 20000;
 const mainTitle = document.querySelector('.main-title');
 const buttonContainer = document.querySelector('.button-container');
 
@@ -202,18 +256,24 @@ const MODOS = {
         explicación.style.color = "yellow";
         definicion.style.fontSize = "1vw";
         explicación.innerHTML = "MODO PALABRAS BENDITAS";
-        //////socket.emit("nueva_palabra", player);
-        //////socket.on(enviar_palabra, data => {
-        //////   recibir_palabra(data);
-        //////});
+
+        recibir_palabra();
     },
 
     //Recibe y activa el modo letra prohibida.
     "letra prohibida": function (data) {
+        indice_letra_prohibida = Math.floor(Math.random() * letras_prohibidas_restantes.length);
+        letra_prohibida = letras_prohibidas_restantes[indice_letra_prohibida]
+        letras_prohibidas_restantes.splice(indice_letra_prohibida, 1);
+        if(letras_prohibidas_restantes.length == 0){
+            letras_prohibidas_restantes = [...letras_prohibidas];
+        }
+
+        listener_cambio_letra_palabra = setTimeout(nueva_letra_prohibida, TIEMPO_CAMBIO_LETRA);
+
         definicion.style.fontSize = "1.5vw";
         palabra.style.backgroundColor = "red";
         explicación.style.color = "red";
-        letra_prohibida = data.letra_prohibida;
         //TO DO: MODIFICAR FUNCIÓN PARA QUE NO ESTÉ DENTRO DE OTRA.
         listener_modo = function (e) { modo_letra_prohibida(e) };
         texto.addEventListener("keydown", listener_modo);
@@ -224,10 +284,17 @@ const MODOS = {
     },
 
     "letra bendita": function (data) {
+        indice_letra_bendita = Math.floor(Math.random() * letras_benditas_restantes.length);
+        letra_bendita = letras_benditas_restantes[indice_letra_bendita]
+        letras_benditas_restantes.splice(indice_letra_bendita, 1);
+        if(letras_benditas_restantes.length == 0){
+            letras_benditas_restantes = [...letras_benditas];
+        }
+        listener_cambio_letra_palabra = setTimeout(nueva_letra_bendita, TIEMPO_CAMBIO_LETRA);
+
         definicion.style.fontSize = "1.5vw";
         palabra.style.backgroundColor= "lime";
         explicación.style.color = "lime";
-        letra_bendita = data.letra_bendita;
         //TO DO: MODIFICAR FUNCIÓN PARA QUE NO ESTÉ DENTRO DE OTRA.
         listener_modo = function (e) { modo_letra_bendita(e) };
         texto.addEventListener("keydown", listener_modo, true);
@@ -276,10 +343,8 @@ const MODOS = {
         explicación.innerHTML = "MODO PALABRAS MALDITAS";
         palabra.innerHTML = "";
         definicion.innerHTML = "";
-        //////socket.emit("nueva_palabra_prohibida", player);
-        //////socket.on(enviar_palabra, data => {
-        //////    recibir_palabra_prohibida(data);
-        //////});
+        nueva_palabra_prohibida()
+
     },
 
     'frase final': function (socket) {
@@ -299,16 +364,21 @@ const LIMPIEZAS = {
         asignada = false;
         texto.removeEventListener("keyup", listener_modo);
         definicion.style.fontSize = "1.5vw";
+        clearTimeout(listener_cambio_letra_palabra);
+
     },
 
     "letra prohibida": function (data) {
         texto.removeEventListener("keyup", listener_modo);
+        clearTimeout(listener_cambio_letra_palabra);
         letra_prohibida = "";
     },
 
     "letra bendita": function (data) {
         texto.removeEventListener("keyup", listener_modo);
         letra_bendita = "";
+        clearTimeout(listener_cambio_letra_palabra);
+
     },
 
     "borroso": function (data) {
@@ -334,6 +404,8 @@ const LIMPIEZAS = {
         //////socket.off(enviar_palabra);
         asignada = false;
         texto.removeEventListener("keyup", listener_modo);
+        clearTimeout(listener_cambio_letra_palabra);
+
     },
 
     "frase final": function (data) { },
@@ -583,6 +655,9 @@ function inicio() {
         animateCSS(".contenedor", "pulse");
 
     limpieza();
+    modos_restantes = [...LISTA_MODOS];
+    palabras_prohibidas_restantes = [...palabras_prohibidas];
+
     desactivar_borrar = false;
     texto.style.height = "";
 
@@ -662,7 +737,8 @@ function post_inicio(borrar_texto){
         //socket.off("recibe_temas");
         texto.contentEditable= "true";
         texto.focus();
-        startCountDown(300)
+        startCountDown(TIEMPO_INICIAL/1000)
+        temp_modos()
 }
 
 function startCountDown(duration) {
@@ -686,7 +762,7 @@ function startCountDown(duration) {
         }
         secondsRemaining = secondsRemaining - 1;
         if (secondsRemaining <= 0) {
-            final(1);
+            final();
         };
 
     }, 1000);
@@ -767,14 +843,6 @@ function pausar_js (data){
     pausa();
 };
 
-function fin (data) {
-    console.log(data)
-    if(player == data){
-        console.log("confetti_auxAAXACASCASCASCAS")
-        final();
-    }
-};
-
 
 function nueva_letra (letra) {
     palabra_actual = []
@@ -798,33 +866,59 @@ function nueva_letra (letra) {
     }
 };
 
-function recibir_palabra(data) {
+async function recibir_palabra() {
+    data = await getRandomSpanishWord();
+    console.log(data)
+    if (data) {
+      console.log(`
+        <h2>Palabra: ${data.title}</h2>
+        <p>Definición: ${data.definicion}</p>
+      `);
+      
+    } else {
+      document.getElementById('resultado').textContent = 'Hubo un error';
+    }
     animacion_modo();
-    palabra_actual = data.palabra_bonus[0];
-    palabra.innerHTML = data.palabras_var + " (⏱️+" + data.tiempo_palabras_bonus + " segs.)" ;
-    definicion.innerHTML = data.palabra_bonus[1];
+    palabra_actual = [data.title];
+    tiempo_palabras_bonus = puntuación_palabra(data.title);
+    palabra.innerHTML = data.title + " (⏱️+" + tiempo_palabras_bonus + " segs.)" ;
+    definicion.innerHTML = data.definicion;
 
-    tiempo_palabras_bonus = data.tiempo_palabras_bonus;
     texto.removeEventListener("keyup", listener_modo1);
     texto.removeEventListener("keyup", listener_modo);
     asignada = true;
     listener_modo = function (e) { modo_palabras_bonus(e) };
     texto.addEventListener("keyup", listener_modo);
+    clearTimeout(listener_cambio_letra_palabra)
+    listener_cambio_letra_palabra = setTimeout(recibir_palabra, TIEMPO_CAMBIO_PALABRA);
 }
 
-function recibir_palabra_prohibida(data) {
-    animacion_modo();
-    palabra_actual = data.palabra_bonus[0];
-    palabra.innerHTML = data.palabras_var + " (⏱️-" + data.tiempo_palabras_bonus + " segs.)";
+function nueva_palabra_prohibida() {
 
-    definicion.innerHTML = data.palabra_bonus[1];
-    tiempo_palabras_bonus = data.tiempo_palabras_bonus;
-    texto.removeEventListener("keyup", listener_modo1);
+    indice_palabra = Math.floor(Math.random() * palabras_prohibidas_restantes.length);
+    palabra_bonus = [[palabras_prohibidas_restantes[indice_palabra]], [""]];
+    palabras_prohibidas_restantes.splice(indice_palabra, 1);
+        if(palabras_prohibidas_restantes.length == 0){
+            palabras_prohibidas_restantes = [...palabras_prohibidas];
+        }
+    palabras_var = palabra_bonus[0];
+    tiempo_palabras_bonus = puntuación_palabra(palabra_bonus[0][0]);
+        
+    console.log(palabra_bonus, palabras_var, tiempo_palabras_bonus)
+    animacion_modo();
+    palabra_actual = palabra_bonus[0];
+    palabra.innerHTML = palabras_var + " (⏱️-" + tiempo_palabras_bonus + " segs.)";
+
+    definicion.innerHTML = palabra_bonus[1];
+    tiempo_palabras_bonus = tiempo_palabras_bonus;
     texto.removeEventListener("keyup", listener_modo);
     asignada = true;
     listener_modo = function (e) { modo_palabras_prohibidas(e) };
     texto.addEventListener("keyup", listener_modo);
+    clearTimeout(listener_cambio_letra_palabra)
+    listener_cambio_letra_palabra = setTimeout(nueva_palabra_prohibida, TIEMPO_CAMBIO_PALABRA);
 }
+
 
 // FUNCIONES AUXILIARES.
 
@@ -1200,7 +1294,7 @@ function modo_palabras_bonus(e) {
             ) {
             texto.focus();
             asignada = false;
-            socket.emit("nueva_palabra", player);
+            recibir_palabra()
             addSeconds(tiempo_palabras_bonus)
             feedback.innerHTML = "⏱️+" + tiempo_palabras_bonus + " segs.";
             clearTimeout(delay_animacion);
@@ -1216,7 +1310,6 @@ function modo_palabras_bonus(e) {
                     feedback.innerHTML = "";
                 }, 2000);
             });
-            socket.emit(feedback_de_j_x, { color, tiempo_feed, insp});
         }
     }
 }
@@ -1261,7 +1354,7 @@ function modo_palabras_prohibidas(e) {
             ) {
             texto.focus();
             asignada = false;
-            socket.emit("nueva_palabra_prohibida", player);
+            nueva_palabra_prohibida();
             tiempo_palabras_bonus = -tiempo_palabras_bonus;
             addSeconds(tiempo_palabras_bonus);
             color = color_negativo;
@@ -1278,9 +1371,6 @@ function modo_palabras_prohibidas(e) {
                     feedback.innerHTML = "";
                 }, 2000);
             });
-            color = color_negativo;
-            tiempo_feed = "⏱️" + tiempo_palabras_bonus + " segs.";
-            socket.emit(feedback_de_j_x, { color, tiempo_feed, insp});
         }
     }
 }
@@ -1337,8 +1427,6 @@ function palabras_musas(e) {
             });
             color = "white"
             tiempo_feed = feedback.innerHTML;
-            socket.emit("nueva_palabra_musa", player);
-            socket.emit(feedback_de_j_x, { color, tiempo_feed});
         }
     }
 }
@@ -1397,9 +1485,6 @@ function modo_letra_prohibida(e) {
           feedback.innerHTML = "";
         }, 2000);
       });
-      color = color_negativo;
-      tiempo_feed = feedback.innerHTML;
-      socket.emit(feedback_de_j_x, { color, tiempo_feed });
     }
   }
   
@@ -1479,7 +1564,6 @@ function modo_letra_prohibida(e) {
             });
 
             // Envío de feedback a través de Socket.io
-            socket.emit(feedback_de_j_x, { color: color_positivo, tiempo_feed: feedback.innerHTML });
         } else {
             if (node && node.parentNode.className === 'letra-verde') {
                 e.preventDefault();
@@ -1504,14 +1588,92 @@ function modo_letra_prohibida(e) {
     // Aquí podrías añadir más comportamientos para otras teclas no imprimibles si lo consideras necesario
 }
 
+function nueva_letra_bendita(){
+    indice_letra_bendita = Math.floor(Math.random() * letras_benditas_restantes.length);
+    letra_bendita = letras_benditas_restantes[indice_letra_bendita]
+    letras_benditas_restantes.splice(indice_letra_bendita, 1);
+    if(letras_benditas_restantes.length == 0){
+        letras_benditas_restantes = [...letras_benditas];
+    }
+    console.log("LETRA BENDITA", letra_bendita)
+    nueva_letra(letra_bendita)
+    listener_cambio_letra_palabra = setTimeout(nueva_letra_bendita, TIEMPO_CAMBIO_LETRA);
+}
 
-  
+function nueva_letra_prohibida(){
+    indice_letra_prohibida = Math.floor(Math.random() * letras_prohibidas_restantes.length);
+    letra_prohibida = letras_prohibidas_restantes[indice_letra_prohibida]
+    letras_prohibidas_restantes.splice(indice_letra_prohibida, 1);
+    if(letras_prohibidas_restantes.length == 0){
+        letras_prohibidas_restantes = [...letras_prohibidas];
+    }
+    nueva_letra(letra_prohibida)
+    listener_cambio_letra_palabra = setTimeout(nueva_letra_prohibida, TIEMPO_CAMBIO_LETRA);
+}
 
 function modo_psicodélico() {
     stylize();
 }
 
+
+// Función que inicia el temporizador para una duración determinada
+function temp_modos() {
+
+    modo_anterior = modo_actual;
+    modo_actual = modos_restantes[0];
+    modos_restantes.splice(0, 1);
+    MODOS[modo_actual]("");
+
+    // Reiniciar la variable de contador
+    secondsPassed = 0;
+    
+    // Crear un intervalo que se ejecute cada segundo (1000 ms)
+    intervaloID_temp_modos = setInterval(() => {
+    secondsPassed++;  // Incrementar el contador cada segundo
+    console.log(`Segundos pasados: ${secondsPassed}`);
+    console.log(modo_actual)
+    console.log(modo_anterior)
+    console.log(modos_restantes)
+    console.log(secondsPassed >= TIEMPO_CAMBIO_MODOS)
+    console.log(secondsPassed)
+    console.log(TIEMPO_CAMBIO_MODOS)
+
+      // Verificar si se alcanzó la duración deseada y reiniciar
+      if (secondsPassed >= TIEMPO_CAMBIO_MODOS/1000) {
+        if(modo_actual == "frase final"){
+            final()
+            fin_del_juego = true;
+            clearInterval(intervaloID_temp_modos);
+            LIMPIEZAS[modo_actual]("");
+            modos_restantes = [...LISTA_MODOS];
+            modo_anterior = "";
+            modo_actual = "";
+        }
+        else{
+        secondsPassed = 0;  // Reiniciar el contador a 0
+        
+        LIMPIEZAS[modo_actual]("");
+
+        modo_anterior = modo_actual;
+        modo_actual = modos_restantes[0];
+        modos_restantes.splice(0, 1);
+
+        MODOS[modo_actual]("");
+
+        console.log(modo_actual)
+        console.log(modo_anterior)
+        console.log(modos_restantes)
+        console.log(modos_restantes.length)
+        console.log('Se alcanzó el tiempo límite. Reiniciando temporizador.');
+        }
+        
+        // Si se requiere alguna acción adicional al reiniciar, colócala aquí
+      }
+    }, 1000);
+  }
+
 function limpieza(){
+    clearInterval(countInterval);
     pararEscritura = true;
     clearTimeout(timeoutID_menu)
     stopConfetti();
@@ -1593,11 +1755,15 @@ function limpieza(){
 
 function limpieza_final(){
     clearTimeout(timeoutID_menu);
+    clearInterval(countInterval);
+    clearInterval(intervaloID_temp_modos);
+    clearInterval(listener_cambio_letra_palabra)
     confetti_aux();
     mainMenu.style.display = 'none';
     quantityMenu.style.display = 'none';
     texto.contentEditable= "false";
     texto.style.display = "none";
+    tiempo.style.display="none"
     temas.display = "none";
     temas.innerHTML = "";
     palabra.innerHTML = "";
@@ -1806,7 +1972,7 @@ function stopConfetti() {
 }
 
 function final(){
-    //
+
     menu_modificador = false;
     limpieza_final();
     
@@ -2058,3 +2224,101 @@ document.addEventListener('DOMContentLoaded', function () {
     // Inicialización de los gradientes al cargar la página
     updateGradients();
 });
+
+// Función auxiliar que dada una palabra devuelve una puntación de respecto de la frecuencia.
+function puntuación_palabra(palabra) {
+    palabra = palabra.toLowerCase();
+    let puntuación = 0;
+    if (palabra != null) {
+        palabra = palabra.replace(/\s+/g, '')
+        let longitud = palabra.length;
+        string_unico(toNormalForm(palabra)).split("").forEach(letra => puntuación += frecuencia_letras[letra]);
+        puntuación = Math.ceil((((10 - puntuación*0.5) + longitud * 0.1 * 30)) / 5) * 5
+        if(isNaN(puntuación)){
+            puntuación = 10;
+        }
+        return puntuación;
+    }
+    else return 10;
+}
+
+function string_unico(names) {
+    string = "";
+    ss = "";
+    namestring = names.split("");
+
+    for (j = 0; j < namestring.length; j++) {
+        for (i = j; i < namestring.length; i++) {
+            if (string.includes(namestring[i])) // if contains not work then  
+                break;                          // use includes like in snippet
+            else
+                string += namestring[i];
+        }
+        if (ss.length < string.length)
+            ss = string;
+        string = "";
+    }
+    return ss;
+}
+
+function toNormalForm(str) {
+    return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+async function getRandomSpanishWord() {
+    try {
+      // 1) Obtener página aleatoria con origin=*
+      const randomUrl = 'https://es.wiktionary.org/w/api.php?action=query&list=random&rnlimit=1&rnnamespace=0&format=json&origin=*';
+      const randomRes = await fetch(randomUrl);
+      const randomData = await randomRes.json();
+      
+      if (!randomData.query.random[0]) {
+        throw new Error('No se obtuvo página aleatoria');
+      }
+
+      const title = randomData.query.random[0].title;
+      console.log('Título aleatorio:', title);
+
+      // 2) Consultar el HTML parseado de esa página
+      const parseUrl = `https://es.wiktionary.org/w/api.php?action=parse&page=${encodeURIComponent(title)}&prop=text&format=json&origin=*`;
+      const parseRes = await fetch(parseUrl);
+      const parseData = await parseRes.json();
+      
+      if (!parseData.parse) {
+        throw new Error('No se pudo parsear la página');
+      }
+
+      // 3) Obtenemos la cadena HTML embebida
+      const html = parseData.parse.text['*'];
+
+      // 4) Parsear el HTML con DOMParser (nativo del navegador)
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+
+      // Buscamos el primer <dd> dentro de <dl>
+      let definicionDD = doc.querySelector('dl > dd');
+      // En caso de no existir <dd>, buscamos el primer <li> en .mw-parser-output
+      if (!definicionDD) {
+        definicionDD = doc.querySelector('div.mw-parser-output li');
+      }
+
+      let definicion = definicionDD ? definicionDD.textContent.trim() : 'Sin definición encontrada';
+
+      // Eliminar cualquier estilo incrustado si lo hubiera
+      // (en DOMParser, por fortuna, el <style> no suele mezclarse con textContent, 
+      //  pero si quieres asegurarte de quitar estilos, puedes hacer algo como:
+      doc.querySelectorAll('style').forEach(st => st.remove());
+      definicion = definicion.replace(/\.mw-parser-output\s*\.[\s\S]+?\}/g, '').trim();
+
+      // Mostrar en consola
+      console.log('Definición encontrada:\n', definicion);
+
+      // Retornar un objeto con la info
+      return { title, definicion };
+
+    } catch (err) {
+      console.error('Error en getRandomSpanishWord:', err);
+      return null;
+    }
+  }
+
